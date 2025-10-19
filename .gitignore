@@ -2,3 +2,4 @@
 pretrained_models/
 audio_samples/
 emotion2vec_outputs/
+__pycache__/
