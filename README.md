@@ -3,18 +3,16 @@
 ## Notes
 
 - To ensure compatibility, make sure you are using the following versions:
-    - Python 3.10
-    - pip<24.0
+  - Python 3.10
+  - pip<24.0
+
 - For best developer experience, install WSL if using Windows by running the following command:
-    
+
     ```bash
     wsl --install
     ```
-    
-    Reference: [Install WSL | Microsoft Learn](https://learn.microsoft.com/en-us/windows/wsl/install)
-    
-</aside>
 
+    Reference: [Install WSL | Microsoft Learn](https://learn.microsoft.com/en-us/windows/wsl/install)
 
 ## Instructions
 
