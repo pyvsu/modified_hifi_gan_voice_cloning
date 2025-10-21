@@ -14,6 +14,7 @@ from torch.nn.utils import weight_norm, remove_weight_norm
 from torch.nn.functional import leaky_relu
 
 from .resblock import ResBlock
+from .film import FiLM
 from .utils import init_weights
 
 
@@ -26,7 +27,9 @@ LEAKY_RELU_SLOPE = 0.1
 class UnitHiFiGANGenerator(nn.Module):
     """
     ## Overview
-    Unit-based HiFi-GAN Generator that converts discrete speech units into audio waveforms.
+    Unit-based HiFi-GAN Generator with optional FiLM conditioning 
+    that converts discrete speech units into audio waveforms.
+
     - **Input**:  Discrete unit IDs (LongTensor [B, T])
     - **Output**: Audio waveform (FloatTensor [B, 1, L])
 
@@ -48,8 +51,9 @@ class UnitHiFiGANGenerator(nn.Module):
     [Link to downloadable config.json](https://dl.fbaipublicfiles.com/fairseq/speech_to_speech/vocoder/code_hifigan/mhubert_vp_en_es_fr_it3_400k_layer11_km1000_lj/config.json)
     """
 
-    def __init__(self, config):
+    def __init__(self, config: dict, use_film: bool = False):
         super().__init__()
+        self.use_film = use_film
 
         # Converts unit IDs to become continuous, learnable feature vectors
         # Should have shape (1000, 128)
@@ -72,9 +76,10 @@ class UnitHiFiGANGenerator(nn.Module):
             )
         )
 
-        # Upsampling x Multi-Receptive Field Fusion (MRF) module
+        # Upsampling x Multi-Receptive Field Fusion (MRF) module x FiLM conditioning
         self.ups = nn.ModuleList()
         self.resblocks = nn.ModuleList()
+        self.film_layers = nn.ModuleList() if self.use_film else None
 
         in_ch = config["upsample_initial_channel"]
 
@@ -111,6 +116,18 @@ class UnitHiFiGANGenerator(nn.Module):
                 )
             self.resblocks.append(stage_blocks)
 
+            # FiLM
+            if self.use_film:
+                self.film_layers.append(
+                    FiLM(
+                        in_channels=out_ch,
+                        cond_dim=config.get("film_cond_dim", 512),
+                        use_mlp=config.get("use_film_mlp", False),
+                        hidden_dim=config.get("film_hidden_dim", 256),
+                        dropout_p=config.get("film_dropout_p", 0.1),
+                    )
+                )
+
             # Update for next iteration
             in_ch = out_ch
 
@@ -133,23 +150,50 @@ class UnitHiFiGANGenerator(nn.Module):
         self.conv_post.apply(init_weights)
 
 
-    def forward(self, units: torch.LongTensor) -> torch.Tensor:
-        # [B,T] -> [B,T,C] -> [B,C,T]
+    def forward(
+        self,
+        units: torch.LongTensor,
+        speaker: torch.Tensor | None = None,
+        emotion: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """
+        Args:
+            units: [B, T] discrete speech unit IDs.
+            speaker: [B, D_s] speaker embedding (optional).
+            emotion: [B, D_e] emotion embedding (optional).
+        """
+
+        # 1. Embed discrete speech units -> [B, C, T]
         x = self.unit_embed(units).transpose(1, 2)
 
-        # pre-conv
+        # 2. Pre-conv to match generator's internal channels
         x = self.conv_pre(x)
 
-        # Upsample x MRF
-        for upsample, stage_blocks in zip(self.ups, self.resblocks):
+        # 3. Concatenate conditioning if FiLM is active
+        cond = None
+        if self.use_film:
+            if speaker is not None and emotion is not None:
+                cond = torch.cat([speaker, emotion], dim=-1)
+            elif speaker is not None:
+                cond = speaker
+            elif emotion is not None:
+                cond = emotion
+        
+        # 4. Upsample x FiLM (optional) x MRF 
+        for i, (upsample, stage_blocks) in enumerate(zip(self.ups, self.resblocks)):
+            # Upsample
             x = leaky_relu(x, LEAKY_RELU_SLOPE)
             x = upsample(x)
 
-            # sum & average MRF outputs
+            # Apply FiLM to inject speaker/emotion conditioning
+            if self.use_film and cond is not None:
+                x = self.film_layers[i](x, cond)
+
+            # Sum & average MRF outputs
             res_outputs = [ resblock(x) for resblock in stage_blocks ]
             x = sum(res_outputs) / self.num_kernels
 
-        # post-conv
+        # 5. Post-conv to generate single channel waveform output
         x = leaky_relu(x, LEAKY_RELU_SLOPE)
         x = torch.tanh(self.conv_post(x))
         return x
