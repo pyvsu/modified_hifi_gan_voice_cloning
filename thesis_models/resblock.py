@@ -9,7 +9,6 @@ For in-depth details for residual blocks/nets, refer to its seminal paper: https
 """
 
 import torch.nn as nn
-from torch.nn import Conv1d
 from torch.nn.utils import weight_norm, remove_weight_norm
 from torch.nn.functional import leaky_relu
 
@@ -36,7 +35,7 @@ class ResBlock(nn.Module):
             # With dilations
             self.convs1.append(
                 weight_norm(
-                    Conv1d(
+                    nn.Conv1d(
                         in_channels=channels,
                         out_channels=channels,
                         kernel_size=kernel_size,
@@ -49,7 +48,7 @@ class ResBlock(nn.Module):
             # No dilations
             self.convs2.append(
                 weight_norm(
-                    Conv1d(
+                    nn.Conv1d(
                         in_channels=channels,
                         out_channels=channels,
                         kernel_size=kernel_size,
