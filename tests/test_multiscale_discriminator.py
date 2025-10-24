@@ -1,7 +1,7 @@
 import torch
 import pytest
 
-from thesis_models.multiscale_discriminator import ScaleDiscriminator, MultiScaleDiscriminator
+from models.multiscale_discriminator import ScaleDiscriminator, MultiScaleDiscriminator
 
 
 # -------------------------

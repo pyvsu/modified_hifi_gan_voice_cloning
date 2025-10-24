@@ -9,7 +9,7 @@ import math
 import torch
 import torch.nn as nn
 import pytest
-from thesis_models.resblock import ResBlock
+from models.resblock import ResBlock
 
 
 # ---- Fixtures -----------------------------------------------------------------

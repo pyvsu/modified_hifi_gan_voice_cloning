@@ -10,7 +10,7 @@ Covers:
 
 import pytest
 import torch
-from thesis_models.hifigan_generator import UnitHiFiGANGenerator
+from models.hifigan_generator import UnitHiFiGANGenerator
 
 
 @pytest.fixture(scope="module")
