@@ -1,6 +1,7 @@
 from typing import List, Tuple
 
 import torch
+from torchaudio.transforms import MelSpectrogram
 
 
 def feature_matching_loss(
@@ -44,7 +45,7 @@ def discriminator_adversarial_loss(
     fake_losses = []
 
     for real_logit, fake_logit in zip(real_logits, fake_logits):
-        real_loss = torch.mean((1 - real_logit) ** 2)
+        real_loss = torch.mean((1.0 - real_logit) ** 2)
         fake_loss = torch.mean(fake_logit ** 2)
 
         total_loss += (real_loss + fake_loss)
@@ -65,8 +66,26 @@ def generator_adversarial_loss(fake_logits: List[torch.Tensor]) -> Tuple[torch.T
     losses = []
 
     for fake_logit in fake_logits:
-        loss = torch.mean((1 - fake_logit) ** 2)
+        loss = torch.mean((1.0 - fake_logit) ** 2)
         total_loss += loss
         losses.append(loss.item())
 
     return total_loss, losses
+
+
+def mel_spectrogram_loss(
+    real_audio: torch.Tensor,
+    fake_audio: torch.Tensor,
+    mel_transform: MelSpectrogram,
+    weight: float = 45.0
+) -> torch.Tensor:
+    """
+    Computes mel-spectrogram L1 loss between real and fake audio.
+    """
+
+    real_mel_spectrogram = mel_transform(real_audio)
+    fake_mel_spectrogram = mel_transform(fake_audio)
+
+    loss = torch.mean(torch.abs(real_mel_spectrogram - fake_mel_spectrogram))
+
+    return loss * weight
