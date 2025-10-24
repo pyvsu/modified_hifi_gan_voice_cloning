@@ -10,7 +10,7 @@ Covers:
 
 import torch
 import pytest
-from thesis_models.hifigan_generator import UnitHiFiGANGenerator
+from models.hifigan_generator import UnitHiFiGANGenerator
 
 
 # ----------------------------

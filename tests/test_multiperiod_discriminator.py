@@ -2,8 +2,8 @@ import pytest
 import torch
 import torch.nn as nn
 
-from thesis_models.multiperiod_discriminator import PeriodDiscriminator, MultiPeriodDiscriminator
-from thesis_models.utils import get_padding
+from models.multiperiod_discriminator import PeriodDiscriminator, MultiPeriodDiscriminator
+from models.utils import get_padding
 
 
 @pytest.fixture
