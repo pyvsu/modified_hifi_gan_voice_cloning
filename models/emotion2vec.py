@@ -25,7 +25,9 @@ class Emotion2Vec:
             wav_path,
             output_dir="./emotion2vec_outputs",
             granularity="utterance",
-            extract_embedding=True
+            extract_embedding=True,
+            verbose=False,      # 👈 disable text logs
+            progress=False,     # 👈 disable tqdm bars
         )[0]
 
         if not return_embeddings_only:
