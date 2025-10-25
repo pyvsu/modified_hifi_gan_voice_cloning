@@ -26,26 +26,16 @@ warnings.filterwarnings("ignore", message=".*StreamingMediaDecoder.*")
 
 def parse_args():
     ap = argparse.ArgumentParser(description="LUFS normalize trimmed WAVs.")
-    ap.add_argument("--in-root", type=Path, required=True,
-                    help="Input root (trimmed_audio).")
-    ap.add_argument("--out-root", type=Path, required=True,
-                    help="Output root (normalized_audio).")
-    ap.add_argument("--pattern", type=str, default="*.wav",
-                    help="Glob pattern for matching wav files.")
-    ap.add_argument("--num-workers", type=int, default=6,
-                    help="Multiprocessing workers.")
-    ap.add_argument("--overwrite", action="store_true",
-                    help="Overwrite output files if they exist.")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="Preview files and exit.")
-    ap.add_argument("--target-lufs", type=float, default=-23.0,
-                    help="Target integrated LUFS.")
-    ap.add_argument("--peak-margin-db", type=float, default=0.1,
-                    help="Peak margin relative to 0 dBFS.")
-    ap.add_argument("--max-gain-db", type=float, default=20.0,
-                    help="Max allowed gain (dB).")
-    ap.add_argument("--min-gain-db", type=float, default=-20.0,
-                    help="Min allowed gain (dB).")
+    ap.add_argument("--in-root", type=Path, required=True, help="Input root (trimmed_audio).")
+    ap.add_argument("--out-root", type=Path, required=True, help="Output root (normalized_audio).")
+    ap.add_argument("--pattern", type=str, default="*.wav", help="Glob pattern for matching wav files.")
+    ap.add_argument("--num-workers", type=int, default=6, help="Multiprocessing workers.")
+    ap.add_argument("--overwrite", action="store_true", help="Overwrite output files if they exist.")
+    ap.add_argument("--dry-run", action="store_true", help="Preview files and exit.")
+    ap.add_argument("--target-lufs", type=float, default=-23.0, help="Target integrated LUFS.")
+    ap.add_argument("--peak-margin-db", type=float, default=0.1, help="Peak margin relative to 0 dBFS.")
+    ap.add_argument("--max-gain-db", type=float, default=20.0, help="Max allowed gain (dB).")
+    ap.add_argument("--min-gain-db", type=float, default=-20.0, help="Min allowed gain (dB).")
     return ap.parse_args()
 
 
