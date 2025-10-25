@@ -57,7 +57,7 @@ class UnitHiFiGANGenerator(nn.Module):
 
         # Converts unit IDs to become continuous, learnable feature vectors
         # Should have shape (1000, 128)
-        self.unit_embed = nn.Embedding(config["num_embeddings"], config["embedding_dim"])
+        self.dict = nn.Embedding(config["num_embeddings"], config["embedding_dim"])
 
         # Sanity Check: embedding_dim must equal model_in_dim for checkpoint compatibility
         in_dim = config.get("model_in_dim", config["embedding_dim"])
@@ -104,17 +104,14 @@ class UnitHiFiGANGenerator(nn.Module):
             # MRF
             # For each upsample stage, create several ResBlocks:
             #   e.g., kernels [3, 7, 11] with dilations (1, 3, 5) for each
-            stage_blocks = nn.ModuleList()
             for ks, ds in zip(config["resblock_kernel_sizes"], config["resblock_dilation_sizes"]):
-                # Each ResBlock has the same channels (out_ch) but different receptive fields
-                stage_blocks.append(
+                self.resblocks.append(
                     ResBlock(
                         channels=out_ch,
                         kernel_size=ks,
                         dilations=tuple(ds)
                     )
                 )
-            self.resblocks.append(stage_blocks)
 
             # FiLM
             if self.use_film:
@@ -164,7 +161,7 @@ class UnitHiFiGANGenerator(nn.Module):
         """
 
         # 1. Embed discrete speech units -> [B, C, T]
-        x = self.unit_embed(units).transpose(1, 2)
+        x = self.dict(units).transpose(1, 2)
 
         # 2. Pre-conv to match generator's internal channels
         x = self.conv_pre(x)
@@ -180,7 +177,7 @@ class UnitHiFiGANGenerator(nn.Module):
                 cond = emotion
         
         # 4. Upsample x FiLM (optional) x MRF 
-        for i, (upsample, stage_blocks) in enumerate(zip(self.ups, self.resblocks)):
+        for i, upsample in enumerate(self.ups):
             # Upsample
             x = leaky_relu(x, LEAKY_RELU_SLOPE)
             x = upsample(x)
@@ -190,7 +187,11 @@ class UnitHiFiGANGenerator(nn.Module):
                 x = self.film_layers[i](x, cond)
 
             # Sum & average MRF outputs
-            res_outputs = [ resblock(x) for resblock in stage_blocks ]
+            res_outputs = []
+            for j in range(self.num_kernels):
+                idx = i * self.num_kernels + j
+                y = self.resblocks[idx](x)
+                res_outputs.append(y)
             x = sum(res_outputs) / self.num_kernels
 
         # 5. Post-conv to generate single channel waveform output
@@ -205,6 +206,5 @@ class UnitHiFiGANGenerator(nn.Module):
         for up in self.ups:
             remove_weight_norm(up)
         remove_weight_norm(self.conv_post)
-        for stage in self.resblocks:
-            for rb in stage:
-                rb.remove_weight_norm()
+        for rb in self.resblocks:
+            rb.remove_weight_norm()
