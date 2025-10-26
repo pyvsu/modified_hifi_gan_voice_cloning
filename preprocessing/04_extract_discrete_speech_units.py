@@ -48,9 +48,6 @@ def load_km(path):
 
 def extract_hidden(model, feat_extractor, wav): 
     with torch.no_grad(): 
-        # resample -> 16k 
-        wav = torchaudio.functional.resample(wav, 22050, 16000) 
-        
         # normalize waveform
         wav = wav.mean(dim=0, keepdim=True) 
         
