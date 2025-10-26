@@ -175,7 +175,12 @@ class UnitHiFiGANGenerator(nn.Module):
                 cond = speaker
             elif emotion is not None:
                 cond = emotion
-        
+
+            # Normalize to prevent FiLM from over-conditioning due to large embedding magnitudes, 
+            # improving stability and preserving unit content.
+            if cond is not None:
+                cond = cond / (cond.norm(dim=-1, keepdim=True) + 1e-8)
+
         # 4. Upsample x FiLM (optional) x MRF 
         for i, upsample in enumerate(self.ups):
             # Upsample
