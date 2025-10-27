@@ -3,38 +3,44 @@ from funasr import AutoModel
 
 
 class Emotion2Vec:
-
-    def __init__(self, model_id="iic/emotion2vec_plus_base") -> None:
+    def __init__(self, variant="iic/emotion2vec_plus_base", device="cuda"):
         """
-        Available emotion2vec model variants for `model_id`:
+        Available emotion2vec model variants:
         - "iic/emotion2vec_base"
         - "iic/emotion2vec_base_finetuned"
         - "iic/emotion2vec_plus_seed"
         - "iic/emotion2vec_plus_base" (default)
+        - "iic/emotion2vec_plus_large"
         """
-
+        self.device = device
         self.emotion2vec = AutoModel(
-            model=model_id,
+            model=variant,
             hub="hf",  # Use hugging face
+            device=self.device
         )
 
 
     @torch.no_grad()
-    def extract_emotion_embeddings(self, wav_path, return_embeddings_only=True):
-        result = self.emotion2vec.generate(
-            wav_path,
-            output_dir="./emotion2vec_outputs",
+    def extract_emotion_embeddings(self, wav_path, output_dir=None):
+        raw_result = self.emotion2vec.generate(
+            input=wav_path,
+            output_dir=output_dir,
             granularity="utterance",
             extract_embedding=True,
-            verbose=False,      # 👈 disable text logs
-            progress=False,     # 👈 disable tqdm bars
+            verbose=False,
+            progress=False
         )[0]
 
-        if not return_embeddings_only:
-            return {
-                "embeddings": result["feats"],
-                "predicted_emotion": max(result["labels"]),
-                "predicted_score": max(result["scores"])
-            }
-        
-        return result["feats"]
+        # emotion2vec outputs a numpy array
+        # So, convert it to a 1D torch tensor
+        # raw_result["feats"] contain the actual embeddings
+        embeddings = torch.as_tensor(
+            data=raw_result["feats"],
+            dtype=torch.float32,
+            device=self.device
+        ).flatten()
+
+        # To check if embeddings shape is 1D
+        assert embeddings.ndim == 1, f"Expected 1D embedding, got {embeddings.shape}"
+
+        return embeddings
