@@ -40,8 +40,16 @@ def mel_spectrogram_loss(
     Unweighted log-mel L1 distance using the *custom* MelSpectrogram.
     Weighting is applied by the caller (`train.py`).
     """
+    # Convert waveforms to mel-spectrograms
     real_mel = mel_transform(real_audio)
     fake_mel = mel_transform(fake_audio)
+
+    # Align time dimensions
+    min_t = min(real_mel.size(-1), fake_mel.size(-1))
+    real_mel = real_mel[..., :min_t]
+    fake_mel = fake_mel[..., :min_t]
+
+    # L1 loss between mel spectrograms
     return F.l1_loss(real_mel, fake_mel)
 
 
