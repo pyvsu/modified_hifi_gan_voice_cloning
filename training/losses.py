@@ -19,15 +19,21 @@ def feature_matching_loss(
     """
     loss = torch.zeros(1, device=real_features[0][0].device)
 
-    # First nesting corresponds to each sub-discriminator
+    # Loop over each sub-discriminator
     for subdisc_real_feats, subdisc_fake_feats in zip(real_features, fake_features):
-
-        # Second nesting corresponds to each layer for the current sub-discriminator
+        # Loop over each layer
         for real_layer, fake_layer in zip(subdisc_real_feats, subdisc_fake_feats):
+            
+            # Align shape safely
+            min_c = min(real_layer.size(1), fake_layer.size(1))
+            min_t = min(real_layer.size(2), fake_layer.size(2))
 
-            # Compute L1 (absolute) distance
+            real_layer = real_layer[:, :min_c, :min_t]
+            fake_layer = fake_layer[:, :min_c, :min_t]
+
+            # Compute L1 loss
             loss += torch.mean(torch.abs(real_layer - fake_layer))
-    
+
     return loss
 
 
