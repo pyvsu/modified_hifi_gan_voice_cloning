@@ -65,6 +65,9 @@ class LibriTTSRDataset(Dataset):
         with open(self.jsonl_path, "r", encoding="utf-8") as file:
             self.metadata = [json.loads(line) for line in file]
 
+        # Will be used by LengthBucketSampler for efficient bucketing
+        self.unit_lengths = [record.get("num_units", None) for record in self.metadata]
+
 
     def __len__(self):
         return len(self.metadata)

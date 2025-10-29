@@ -152,44 +152,18 @@ class MultiScaleDiscriminator(nn.Module):
             ScaleDiscriminator(use_spectral_norm=False),
         ])
 
-        # Average pooling downsamples the input for lower resolutions
-        self.avg_pools = nn.ModuleList([
-            nn.AvgPool1d(kernel_size=4, stride=2, padding=2),
-            nn.AvgPool1d(kernel_size=4, stride=2, padding=2),
-        ])
 
+    def forward(self, audio: torch.Tensor):
+        scores = []
+        feature_maps = []
 
-    def forward(self, real_audio: torch.Tensor, fake_audio: torch.Tensor):
-        """
-        Args:
-            real_audio: ground-truth waveform [B, 1, T]
-            fake_audio: generator output waveform [B, 1, T]
+        for disc in self.discriminators:
+            score, feats = disc(audio)
+            scores.append(score)
+            feature_maps.append(feats)
 
-        Returns:
-            real_logits: list of discriminator outputs on real audio
-            fake_logits: list of discriminator outputs on fake audio
-            real_features: intermediate feature maps (for feature-matching)
-            fake_features: intermediate feature maps
-        """
+            # Downsample for next discriminator
+            audio = F.avg_pool1d(audio, kernel_size=4, stride=2, padding=2)
 
-        real_logits = []
-        fake_logits = []
-        real_features = []
-        fake_features = []
+        return scores, feature_maps
 
-        for i, discriminator in enumerate(self.discriminators):
-
-            # Downsample both real and fake after the 1st scale (raw waveform)
-            if i > 0:
-                real_audio = self.avg_pools[i - 1](real_audio)
-                fake_audio = self.avg_pools[i - 1](fake_audio)
-
-            real_logit, real_feat = discriminator(real_audio)
-            fake_logit, fake_feat = discriminator(fake_audio)
-
-            real_logits.append(real_logit)
-            fake_logits.append(fake_logit)
-            real_features.append(real_feat)
-            fake_features.append(fake_feat)
-
-        return real_logits, fake_logits, real_features, fake_features

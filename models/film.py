@@ -64,6 +64,23 @@ class FiLM(nn.Module):
             return x
 
         gamma, beta = self.net(cond).chunk(2, dim=-1)
-        gamma, beta = gamma.unsqueeze(-1), beta.unsqueeze(-1)
+        
+        # Clamp modulation to avoid runaway scaling
+        gamma = torch.tanh(gamma)
+        beta  = torch.tanh(beta)
+
+        gamma = gamma.unsqueeze(-1)
+        beta  = beta.unsqueeze(-1)
+
+        # FiLM Diagnostics (prints every 2000 steps)
+        if hasattr(self, "global_step") and self.global_step is not None:
+            if self.global_step % 2000 == 0:
+                avg_gamma = gamma.abs().mean().item()
+                avg_beta = beta.abs().mean().item()
+                avg_act = x.abs().mean().item()
+                print(
+                    f"[FiLM] step={self.global_step} | "
+                    f"gamma={avg_gamma:.3f} | beta={avg_beta:.3f} | act={avg_act:.3f}"
+                )
 
         return gamma * x + beta
