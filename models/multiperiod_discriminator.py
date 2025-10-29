@@ -139,27 +139,20 @@ class MultiPeriodDiscriminator(nn.Module):
         )
 
 
-    def forward(self, real_audio: torch.Tensor, generated_audio: torch.Tensor):
+    def forward(self, audio: torch.Tensor):
         """
         Args:
-            real_audio: ground truth waveform [B, 1, T]
-            generated_audio: predicted waveform [B, 1, T]
+            audio: waveform [B, 1, T]
         Returns:
-            real_scores, fake_scores, real_features, fake_features
+            scores: List of logits
+            feature_maps: List of intermediate activations for feature matching
         """
-
-        real_scores = []
-        fake_scores = []
-        real_features = []
-        fake_features = []
+        scores = []
+        feature_maps = []
 
         for discriminator in self.sub_discriminators:
-            real_score, real_feat = discriminator(real_audio)
-            fake_score, fake_feat = discriminator(generated_audio)
+            score, feats = discriminator(audio)
+            scores.append(score)
+            feature_maps.append(feats)
 
-            real_scores.append(real_score)
-            fake_scores.append(fake_score)
-            real_features.append(real_feat)
-            fake_features.append(fake_feat)
-
-        return real_scores, fake_scores, real_features, fake_features
+        return scores, feature_maps

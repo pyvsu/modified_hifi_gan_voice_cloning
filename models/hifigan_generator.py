@@ -140,6 +140,10 @@ class UnitHiFiGANGenerator(nn.Module):
 
         self.num_kernels = len(config["resblock_kernel_sizes"])
 
+        # Project speaker + emotion embeddings (960 → 512)
+        # (192 speaker + 768 emotion = 960 total dims)
+        self.cond_proj = nn.Linear(960, config.get("film_cond_dim", 512))
+
         # Override default weights to stabilize training and reduce artifacts
         self.conv_pre.apply(init_weights)
         for up in self.ups:
@@ -152,6 +156,7 @@ class UnitHiFiGANGenerator(nn.Module):
         units: torch.LongTensor,
         speaker: torch.Tensor | None = None,
         emotion: torch.Tensor | None = None,
+        global_step: int | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -176,10 +181,11 @@ class UnitHiFiGANGenerator(nn.Module):
             elif emotion is not None:
                 cond = emotion
 
-            # Normalize to prevent FiLM from over-conditioning due to large embedding magnitudes, 
-            # improving stability and preserving unit content.
             if cond is not None:
-                cond = cond / (cond.norm(dim=-1, keepdim=True) + 1e-8)
+                # NOTE: Removed normalization temporarily since it might be erasing meaningful magnitude differences from the embeddings
+                # Normalize to prevent FiLM from over-conditioning due to large embedding magnitudes
+                # cond = cond / (cond.norm(dim=-1, keepdim=True) + 1e-8)
+                cond = self.cond_proj(cond)
 
         # 4. Upsample x FiLM (optional) x MRF 
         for i, upsample in enumerate(self.ups):
@@ -189,6 +195,7 @@ class UnitHiFiGANGenerator(nn.Module):
 
             # Apply FiLM to inject speaker/emotion conditioning
             if self.use_film and cond is not None:
+                self.film_layers[i].global_step = global_step
                 x = self.film_layers[i](x, cond)
 
             # Sum & average MRF outputs
