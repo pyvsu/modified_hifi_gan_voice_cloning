@@ -380,40 +380,41 @@ def main():
     ema.load_state_dict(generator.state_dict())
     ema.eval()
 
-    # Progressive unfreezing setup
-    unfreeze_milestones = _parse_unfreeze_steps_args(args.unfreeze_steps)
+    # =============================
+    # Two-Group Differential LRs
+    # =============================
+    # Group 1 (FAST): New layers that must learn from scratch
+    #   - FiLM layers
+    #   - cond_proj
+    #   - dict (unit embedding table)
+    #
+    # Group 2 (SLOW): Pretrained HiFi-GAN backbone
+    #   - conv_pre, ups, resblocks, conv_post
+
     groups = _split_generator_param_names(generator)
-
     film_names = groups["film_names"]
-    late_names = groups["late_names"]
-    base_rest  = groups["base_rest"]
 
-    # Phase 1: only FiLM trainable (optionally include last block)
-    phase1_names = set(film_names)
-    if args.phase1_include_last:
-        phase1_names = phase1_names.union(late_names)
+    # Explicitly include embedding ('dict') in the fast group
+    all_param_names = [n for (n, _) in generator.named_parameters()]
+    embed_names = {n for n in all_param_names if n.startswith("dict")}
 
-    # Freeze everything first
-    _set_requires_grad_by_names(generator, set(film_names).union(late_names).union(base_rest), False)
-    # Then unfreeze Phase-1 names
-    _set_requires_grad_by_names(generator, phase1_names, True)
+    fast_names = set(film_names).union(embed_names)
+    slow_names = {n for n in all_param_names if n not in fast_names}
 
-    # Keep state for milestones
-    current_phase = 1  # 1: FiLM-only(±last), 2: +late, 3: all
+    fast_params = _params_by_names(generator, fast_names)
+    slow_params = _params_by_names(generator, slow_names)
 
-    # Optimizers
-    # Phase-1 optimizer: FiLM (+ optional last block) only
-    film_params = _params_by_names(generator, film_names)
-    phase1_extra = _params_by_names(generator, (late_names if args.phase1_include_last else set()))
-    phase1_param_groups = []
-    if len(phase1_extra) > 0:
-        # Last block at the same LR as the base generator
-        phase1_param_groups.append({"params": phase1_extra, "lr": args.lr_generator})
-    # FiLM faster: 10x
-    phase1_param_groups.append({"params": film_params, "lr": args.lr_generator * 10.0})
+    assert len(fast_params) > 0, "FAST group is empty (expected FiLM/cond_proj/dict)."
+    assert len(slow_params) > 0, "SLOW group is empty (expected pretrained backbone)."
+
+    # Safer fine-tuning multipliers:
+    generator_param_groups = [
+        {"params": fast_params, "lr": args.lr_generator},
+        {"params": slow_params, "lr": args.lr_generator * 0.1},
+    ]
 
     generator_optimizer = torch.optim.AdamW(
-        phase1_param_groups,
+        generator_param_groups,
         betas=(0.8, 0.99),
         weight_decay=0.0,
     )
@@ -425,50 +426,110 @@ def main():
         weight_decay=0.0,
     )
 
-    # LR Schedulers
     generator_scheduler = CosineAnnealingLR(
-        generator_optimizer,
-        T_max=total_steps,
-        eta_min=1e-6
+        generator_optimizer, T_max=total_steps, eta_min=1e-6
     )
-
     discriminator_scheduler = CosineAnnealingLR(
-        discriminator_optimizer,
-        T_max=total_steps,
-        eta_min=1e-6
+        discriminator_optimizer, T_max=total_steps, eta_min=1e-6
     )
 
-    print(f"[*] Using CosineAnnealingLR (T_max={total_steps}, eta_min=1e-6)")
+    print(f"[*] Using Two-Group DLR — FAST(new)=1.0x, SLOW(pre)=0.1x | CosineAnnealingLR (T_max={total_steps})")
+    print(f"[*] FAST(new) params: {len(fast_names)} | SLOW(pre) params: {len(slow_names)}")
+    for n in sorted(list(embed_names))[:3]:
+        print(f"    [fast] {n}")
 
-    def advance_unfreeze_phase(phase:int):
-        """
-        Phase 1 -> Phase 2: add late block params
-        Phase 2 -> Phase 3: add remaining base params
-        """
-        nonlocal generator_optimizer
 
-        if phase == 1:
-            # Move to Phase 2: unfreeze late block (if not already included)
-            newly_trainable = late_names if not args.phase1_include_last else set()
-            if len(newly_trainable) > 0:
-                _set_requires_grad_by_names(generator, newly_trainable, True)
-                new_params = _params_by_names(generator, newly_trainable)
-                if len(new_params) > 0:
-                    # Late block at base LR
-                    generator_optimizer.add_param_group({"params": new_params, "lr": args.lr_generator})
-            print("[*] Unfreeze Phase 2: training FiLM + late block(s).")
-            return 2
+    # Progressive unfreezing setup
+    # unfreeze_milestones = _parse_unfreeze_steps_args(args.unfreeze_steps)
+    # groups = _split_generator_param_names(generator)
 
-        elif phase == 2:
-            # Move to Phase 3: unfreeze the rest
-            _set_requires_grad_by_names(generator, base_rest, True)
-            new_params = _params_by_names(generator, base_rest)
-            if len(new_params) > 0:
-                generator_optimizer.add_param_group({"params": new_params, "lr": args.lr_generator})
-            print("[*] Unfreeze Phase 3: training FiLM + ALL generator layers.")
-            return 3
+    # film_names = groups["film_names"]
+    # late_names = groups["late_names"]
+    # base_rest  = groups["base_rest"]
 
-        return phase  # no change
+    # # Phase 1: only FiLM trainable (optionally include last block)
+    # phase1_names = set(film_names)
+    # if args.phase1_include_last:
+    #     phase1_names = phase1_names.union(late_names)
+
+    # # Freeze everything first
+    # _set_requires_grad_by_names(generator, set(film_names).union(late_names).union(base_rest), False)
+    # # Then unfreeze Phase-1 names
+    # _set_requires_grad_by_names(generator, phase1_names, True)
+
+    # # Keep state for milestones
+    # current_phase = 1  # 1: FiLM-only(±last), 2: +late, 3: all
+
+    # # Optimizers
+    # # Phase-1 optimizer: FiLM (+ optional last block) only
+    # film_params = _params_by_names(generator, film_names)
+    # phase1_extra = _params_by_names(generator, (late_names if args.phase1_include_last else set()))
+    # phase1_param_groups = []
+
+    # if len(phase1_extra) > 0:
+    #     # Last block at the same LR as the base generator
+    #     phase1_param_groups.append({"params": phase1_extra, "lr": args.lr_generator})
+    
+    # # FiLM faster
+    # phase1_param_groups.append({"params": film_params, "lr": args.lr_generator * 2.0})
+
+    # generator_optimizer = torch.optim.AdamW(
+    #     phase1_param_groups,
+    #     betas=(0.8, 0.99),
+    #     weight_decay=0.0,
+    # )
+
+    # discriminator_optimizer = torch.optim.AdamW(
+    #     list(mpd.parameters()) + list(msd.parameters()),
+    #     lr=args.lr_discriminator,
+    #     betas=(0.8, 0.99),
+    #     weight_decay=0.0,
+    # )
+
+    # # LR Schedulers
+    # generator_scheduler = CosineAnnealingLR(
+    #     generator_optimizer,
+    #     T_max=total_steps,
+    #     eta_min=1e-6
+    # )
+
+    # discriminator_scheduler = CosineAnnealingLR(
+    #     discriminator_optimizer,
+    #     T_max=total_steps,
+    #     eta_min=1e-6
+    # )
+
+    # print(f"[*] Using CosineAnnealingLR (T_max={total_steps}, eta_min=1e-6)")
+
+    # def advance_unfreeze_phase(phase:int):
+    #     """
+    #     Phase 1 -> Phase 2: add late block params
+    #     Phase 2 -> Phase 3: add remaining base params
+    #     """
+    #     nonlocal generator_optimizer
+
+    #     if phase == 1:
+    #         # Move to Phase 2: unfreeze late block (if not already included)
+    #         newly_trainable = late_names if not args.phase1_include_last else set()
+    #         if len(newly_trainable) > 0:
+    #             _set_requires_grad_by_names(generator, newly_trainable, True)
+    #             new_params = _params_by_names(generator, newly_trainable)
+    #             if len(new_params) > 0:
+    #                 # Late block at base LR
+    #                 generator_optimizer.add_param_group({"params": new_params, "lr": args.lr_generator})
+    #         print("[*] Unfreeze Phase 2: training FiLM + late block(s).")
+    #         return 2
+
+    #     elif phase == 2:
+    #         # Move to Phase 3: unfreeze the rest
+    #         _set_requires_grad_by_names(generator, base_rest, True)
+    #         new_params = _params_by_names(generator, base_rest)
+    #         if len(new_params) > 0:
+    #             generator_optimizer.add_param_group({"params": new_params, "lr": args.lr_generator})
+    #         print("[*] Unfreeze Phase 3: training FiLM + ALL generator layers.")
+    #         return 3
+
+    #     return phase  # no change
 
     grad_scaler = GradScaler(enabled=args.amp)
 
@@ -649,14 +710,14 @@ def main():
             global_step += 1
 
             # ---- Progressive unfreezing milestones ----
-            if len(unfreeze_milestones) > 0:
-                # If we've crossed the next milestone, advance the phase
-                while len(unfreeze_milestones) > 0 and global_step >= unfreeze_milestones[0]:
-                    next_step = unfreeze_milestones.pop(0)
-                    new_phase = advance_unfreeze_phase(current_phase)
-                    if new_phase != current_phase:
-                        current_phase = new_phase
-                        print(f"[*] Advanced to Phase {current_phase} at step {global_step} (milestone {next_step}).")
+            # if len(unfreeze_milestones) > 0:
+            #     # If we've crossed the next milestone, advance the phase
+            #     while len(unfreeze_milestones) > 0 and global_step >= unfreeze_milestones[0]:
+            #         next_step = unfreeze_milestones.pop(0)
+            #         new_phase = advance_unfreeze_phase(current_phase)
+            #         if new_phase != current_phase:
+            #             current_phase = new_phase
+            #             print(f"[*] Advanced to Phase {current_phase} at step {global_step} (milestone {next_step}).")
 
 
             progress_bar.set_postfix({

@@ -10,8 +10,8 @@ For detailed model architecture details, refer to the original paper: https://ar
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn.utils import weight_norm, remove_weight_norm
-from torch.nn.functional import leaky_relu
 
 from .resblock import ResBlock
 from .film import FiLM
@@ -175,11 +175,13 @@ class UnitHiFiGANGenerator(nn.Module):
         cond = None
         if self.use_film:
             if speaker is not None and emotion is not None:
-                cond = torch.cat([speaker, emotion], dim=-1)
+                speaker_norm = F.normalize(speaker, dim=-1)
+                emotion_norm = F.normalize(emotion, dim=-1)
+                cond = torch.cat([speaker_norm, emotion_norm], dim=-1)
             elif speaker is not None:
-                cond = speaker
+                cond = F.normalize(speaker, dim=-1)
             elif emotion is not None:
-                cond = emotion
+                cond = F.normalize(emotion, dim=-1)
 
             if cond is not None:
                 # NOTE: Removed normalization temporarily since it might be erasing meaningful magnitude differences from the embeddings
@@ -190,7 +192,7 @@ class UnitHiFiGANGenerator(nn.Module):
         # 4. Upsample x FiLM (optional) x MRF 
         for i, upsample in enumerate(self.ups):
             # Upsample
-            x = leaky_relu(x, LEAKY_RELU_SLOPE)
+            x = F.leaky_relu(x, LEAKY_RELU_SLOPE)
             x = upsample(x)
 
             # Apply FiLM to inject speaker/emotion conditioning
@@ -207,7 +209,7 @@ class UnitHiFiGANGenerator(nn.Module):
             x = sum(res_outputs) / self.num_kernels
 
         # 5. Post-conv to generate single channel waveform output
-        x = leaky_relu(x, LEAKY_RELU_SLOPE)
+        x = F.leaky_relu(x, LEAKY_RELU_SLOPE)
         x = torch.tanh(self.conv_post(x))
         return x
 
