@@ -4,3 +4,4 @@ audio_samples/
 emotion2vec_outputs/
 __pycache__/
 checkpoints/
+best/
